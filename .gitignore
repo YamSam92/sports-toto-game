@@ -1,4 +1,4 @@
-﻿.netlify/
+.netlify/
 *.log
 .DS_Store
 Thumbs.db
