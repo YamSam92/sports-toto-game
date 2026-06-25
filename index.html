@@ -140,7 +140,9 @@
   .rp{text-align:right;}
   .rp .pf{font-weight:900;font-size:16px;color:var(--green);} .rp .pf.neg{color:var(--red);}
   .rp .bl{font-size:11px;color:var(--muted);font-weight:700;}
-  .rank-empty{text-align:center;color:#6f7ea2;font-weight:700;padding:30px 0;}
+  .rank-empty{text-align:center;color:#6f7ea2;font-weight:700;padding:30px 0;line-height:1.6;}
+  .myrec{width:100%;max-width:400px;background:#15281a;border:1px solid #366b2a;border-radius:12px;padding:11px 14px;margin-bottom:12px;font-size:13.5px;font-weight:700;color:#cfe8c0;text-align:center;}
+  .myrec b{color:#fff;} .myrec .mp{color:var(--gold);font-weight:900;font-size:16px;margin-left:4px;} .myrec small{display:block;color:#9bbf8c;margin-top:3px;font-size:11px;}
   .clear-ranks{margin-top:14px;background:none;border:none;color:#5b6a8c;font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer;font-family:inherit;}
 
   .toast{position:absolute;left:50%;top:58px;transform:translateX(-50%);background:#0a1120;border:1px solid var(--line);color:#fff;padding:9px 18px;border-radius:999px;font-size:13px;font-weight:800;z-index:50;opacity:0;transition:.25s;pointer-events:none;white-space:nowrap;}
@@ -213,14 +215,15 @@
 
   <!-- 랭킹 -->
   <section class="screen" id="rank">
-    <h2>🏆 많이 번 랭킹</h2>
-    <p class="sub">수익률(초기 자본금 대비) TOP 10 · 이 기기에 저장</p>
+    <h2>🏆 랭킹 TOP 10</h2>
+    <p class="sub">전체 순위 · 초기 자본금 대비 수익률(%)</p>
+    <div class="myrec" id="myRec" style="display:none"></div>
     <div class="ranklist" id="rankList"></div>
     <div class="res-btns">
       <button class="btn2" onclick="toStart()">처음으로</button>
       <button class="btn1" onclick="backFromRank()">닫기</button>
     </div>
-    <button class="clear-ranks" onclick="clearRanks()">랭킹 초기화</button>
+    <button class="clear-ranks" onclick="clearMy()">내 기록 지우기</button>
   </section>
 
   <div class="modal-bg" id="resModal"><div class="modal" id="resBody"></div></div>
@@ -392,43 +395,50 @@ function endRun(busted){
   show('result');
 }
 function submitRank(){
-  if(!pendingScore){ return; }
-  let nm=(document.getElementById('regName').value||'').trim();
-  if(!nm){ toast('닉네임을 입력하세요'); return; }
-  addRank(nm, pendingScore.profit, pendingScore.balance, pendingScore.start);
-  pendingScore=null; toast('랭킹에 등록했어요! 🏆'); showRank();
+  if(!pendingScore) return;
+  const nm=(document.getElementById('regName').value||'').trim();
+  if(!nm){ toast('이름을 입력하세요'); return; }
+  const e={name:nm.slice(0,10), profit:pendingScore.profit, balance:pendingScore.balance, start:pendingScore.start, pct:pendingScore.profit/pendingScore.start*100, t:Date.now()};
+  saveMyRecord(e);                 // 내 기록만 로컬에 저장
+  pendingScore=null;
+  document.getElementById('regBox').style.display='none';
+  toast('등록 중...');
+  postRank(e).then(top=>{ toast(top?'랭킹에 등록했어요! 🏆':'서버 연결 실패 — 내 기록은 저장됨'); openRank(top); });
 }
 
-/* ===== 랭킹 (localStorage) ===== */
-function loadRanks(){ try{ return JSON.parse(localStorage.getItem('toto_ranks')||'[]'); }catch(e){ return []; } }
-function saveRanks(r){ try{ localStorage.setItem('toto_ranks', JSON.stringify(r)); }catch(e){} }
-function addRank(name, profit, balance, start){
-  const r=loadRanks(); r.forEach(x=>delete x._me);
-  const entry={name:name.slice(0,10), profit:Math.round(profit), balance:Math.round(balance), start, t:Date.now(), _me:true};
-  r.push(entry); r.sort((a,b)=>(b.profit/b.start)-(a.profit/a.start));
-  const top=r.slice(0,50); saveRanks(top); return top;
-}
+/* ===== 랭킹: 공용 TOP10(서버) + 내 기록(로컬) ===== */
+const RANKS_API='/.netlify/functions/ranks';
+function loadMy(){ try{ return JSON.parse(localStorage.getItem('toto_me')||'null'); }catch(e){ return null; } }
+function saveMyRecord(e){ const cur=loadMy(); if(!cur || e.pct>cur.pct){ try{ localStorage.setItem('toto_me', JSON.stringify(e)); }catch(_){} } }
+function clearMy(){ if(confirm('내 기록(이 기기 저장)을 지울까요?')){ try{ localStorage.removeItem('toto_me'); }catch(_){} renderMyRec(); toast('내 기록을 지웠어요'); } }
+async function fetchRanks(){ try{ const r=await fetch(RANKS_API,{cache:'no-store'}); if(!r.ok) throw 0; return await r.json(); }catch(e){ return null; } }
+async function postRank(e){ try{ const r=await fetch(RANKS_API,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:e.name,profit:e.profit,balance:e.balance,start:e.start})}); if(!r.ok) throw 0; return await r.json(); }catch(err){ return null; } }
 function backFromRank(){ show(rankFrom==='result'?'result':'start'); }
-function showRank(meIdx){
+async function showRank(){
   rankFrom = document.getElementById('result').classList.contains('on') ? 'result' : 'start';
-  renderRank();
-  show('rank');
+  show('rank'); renderMyRec();
+  document.getElementById('rankList').innerHTML='<div class="rank-empty">불러오는 중...</div>';
+  renderRank(await fetchRanks());
 }
-function fmtDate(t){ const d=new Date(t); const p=n=>('0'+n).slice(-2); return d.getFullYear()+'.'+p(d.getMonth()+1)+'.'+p(d.getDate()); }
-function renderRank(){
-  const r=loadRanks().slice(0,10);
+function openRank(top){ rankFrom='result'; show('rank'); renderRank(top); }
+function renderMyRec(){
+  const m=loadMy(), box=document.getElementById('myRec');
+  if(!m){ box.style.display='none'; return; }
+  box.style.display=''; box.innerHTML='⭐ 내 최고 기록 · <b>'+esc(m.name)+'</b> <span class="mp">'+(m.pct>=0?'+':'')+Math.round(m.pct)+'%</span><small>시작 '+won(m.start)+' → 최고 '+won(m.balance)+'</small>';
+}
+function renderRank(top){
+  renderMyRec();
   const box=document.getElementById('rankList');
-  if(!r.length){ box.innerHTML='<div class="rank-empty">아직 등록된 기록이 없어요.<br>게임을 플레이하고 ‘정산’ 후 등록해 보세요! 🏆</div>'; return; }
-  const medal=i=>['🥇','🥈','🥉'][i]||(i+1);
-  const pctOf=e=>e.start>0?e.profit/e.start*100:0;
-  box.innerHTML=r.map((e,i)=>{ const p=pctOf(e);
-    return `<div class="rrow ${e._me?'me':''} ${i===0?'top1':''}">
+  if(top===null){ box.innerHTML='<div class="rank-empty">⚠️ 랭킹 서버에 연결할 수 없어요.<br>(배포된 사이트에서 인터넷 연결 시 표시됩니다)</div>'; return; }
+  if(!top.length){ box.innerHTML='<div class="rank-empty">아직 등록된 기록이 없어요.<br>1등에 도전해 보세요! 🏆</div>'; return; }
+  const my=loadMy(); const medal=i=>['🥇','🥈','🥉'][i]||(i+1);
+  box.innerHTML=top.slice(0,10).map((e,i)=>{ const p=(e.pct!=null)?e.pct:(e.start>0?e.profit/e.start*100:0); const me=my&&e.name===my.name;
+    return `<div class="rrow ${me?'me':''} ${i===0?'top1':''}">
     <div class="rk">${medal(i)}</div>
-    <div class="rn">${esc(e.name)}${e._me?' <span style="color:var(--gold)">(나)</span>':''}<span class="d">시작 ${won(e.start)} · ${fmtDate(e.t)}</span></div>
-    <div class="rp"><div class="pf ${p<0?'neg':''}">${(p>=0?'+':'')+Math.round(p)}%</div><div class="bl">최고 ${won(e.balance)}</div></div>
+    <div class="rn">${esc(e.name)}${me?' <span style="color:var(--gold)">(나)</span>':''}<span class="d">시작 ${won(e.start)}</span></div>
+    <div class="rp"><div class="pf">${(p>=0?'+':'')+Math.round(p)}%</div><div class="bl">최고 ${won(e.balance)}</div></div>
   </div>`; }).join('');
 }
-function clearRanks(){ if(confirm('이 기기의 랭킹 기록을 모두 지울까요?')){ saveRanks([]); renderRank(); toast('랭킹을 초기화했어요'); } }
 </script>
 </body>
 </html>
