@@ -367,10 +367,7 @@ function closeResult(){
   if(balance<1000){ endRun(true); return; }
   round++; stakeAmt=0; document.getElementById('stakeIn').value=''; genMatches(); updateBal();
 }
-function cashOut(){
-  if(betCount===0){ toStart(); return; }
-  if(confirm('지금 정산하고 그만두시겠어요?\n현재 보유머니로 점수가 확정됩니다.')) endRun(false);
-}
+function cashOut(){ endRun(false); }
 
 /* ===== 결과 화면 ===== */
 let pendingScore=null;
