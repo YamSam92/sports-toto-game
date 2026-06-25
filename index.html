@@ -203,7 +203,7 @@
     <div class="stats" id="resStats"></div>
     <div class="reg" id="regBox">
       <div class="reg-q">🏆 랭킹에 이름 올리기</div>
-      <div class="reg-row"><input id="regName" maxlength="8" placeholder="닉네임 (최대 8자)"><button onclick="submitRank()">등록</button></div>
+      <div class="reg-row"><input id="regName" maxlength="10" placeholder="이름 입력 (최대 10자)"><button onclick="submitRank()">등록</button></div>
     </div>
     <div class="res-btns">
       <button class="btn2" onclick="showRank()">🏆 랭킹</button>
@@ -243,7 +243,10 @@ const won=n=>Math.round(n).toLocaleString('ko-KR')+'원';
 const signWon=n=>(n>=0?'+':'-')+Math.abs(Math.round(n)).toLocaleString('ko-KR')+'원';
 function rint(n){ return Math.floor(Math.random()*n); }
 function randn(){ return (Math.random()+Math.random()+Math.random()+Math.random()+Math.random()+Math.random()-3); }
-function sampleMargin(L,sA,sB){ let v=L.mu*(sA-sB)+randn()*L.sd; let m=Math.round(v); if(L.key==='lck'&&m===0) m=v>=0?1:-1; return m; }
+function sampleMargin(L,sA,sB){ let v=L.mu*(sA-sB)+randn()*L.sd; let m=Math.round(v);
+  if(m===0){ if(L.key==='lck') m=(v>=0?1:-1);              /* LoL: 무승부 없음 */
+             else if(L.key==='kbo' && Math.random()>0.18) m=(v>=0?1:-1); } /* 야구: 무승부 매우 드묾 */
+  return m; }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function toast(t){ const e=document.getElementById('toast'); e.textContent=t; e.classList.add('on'); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.remove('on'),1600); }
 function show(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on')); document.getElementById(id).classList.add('on'); }
@@ -273,33 +276,32 @@ function genMatches(n){
     const L=LEAGUES[rint(LEAGUES.length)];
     let a=rint(L.teams.length), b; do{ b=rint(L.teams.length); }while(b===a);
     const sA=0.30+Math.random()*0.40, sB=0.30+Math.random()*0.40;
-    const em=L.mu*(sA-sB); let H=Math.round(em); if(H===0) H=(Math.random()<0.5?1:-1);
+    const em=L.mu*(sA-sB); const noDraw=(L.key==='lck');
+    let H=Math.round(em); if(H===0) H=(Math.random()<0.5?1:-1);
+    const hcA = noDraw ? (em>=0?-1.5:1.5) : -H;   // 핸디캡(팀A 기준 가산값) · LoL은 .5라인→무승부 없음
     const N=700; let cW=0,cD=0,cL=0,hW=0,hD=0,hL=0;
     for(let k=0;k<N;k++){ const m=sampleMargin(L,sA,sB);
-      if(m>0)cW++; else if(m===0)cD++; else cL++;
-      const hm=m-H; if(hm>0)hW++; else if(hm===0)hD++; else hL++; }
+      if(m>0)cW++; else if(m<0)cL++; else cD++;
+      const hm=m+hcA; if(hm>0)hW++; else if(hm<0)hL++; else hD++; }
     const od=c=>{ let p=Math.max(c/N,0.012); let o=(1/p)/OVERROUND; return Math.min(Math.max(Math.round(o*100)/100,1.05),30); };
-    matches.push({id:i,L,a:L.teams[a],b:L.teams[b],sA,sB,H,odds:{w:od(cW),d:od(cD),l:od(cL),hw:od(hW),hd:od(hD),hl:od(hL)}});
+    const odds={w:od(cW),l:od(cL),hw:od(hW),hl:od(hL)};
+    if(!noDraw){ odds.d=od(cD); odds.hd=od(hD); }
+    matches.push({id:i,L,a:L.teams[a],b:L.teams[b],sA,sB,hcA,noDraw,odds});
   }
   renderBoard(); renderSlip();
 }
-function hcLabel(M){ return M.H>0 ? M.a+' -'+M.H : M.a+' +'+(-M.H); }
+function hcLabel(M){ const v=M.hcA; return M.a+' '+(v>0?'+':'')+v; }
 function renderBoard(){
   document.getElementById('boardList').innerHTML = matches.map(M=>{
     const o=M.odds, sel=selections[M.id];
     const cls=(mk,pk)=> (sel&&sel.market===mk&&sel.pick===pk)?' on':'';
+    const btn=(mk,pk,lb,odd)=> `<button class="odd m${M.id}${cls(mk,pk)}" onclick="sel(this,${M.id},'${mk}','${pk}',${odd})"><span>${lb}</span><b>${odd.toFixed(2)}</b></button>`;
+    const gRow=btn('g','w','승',o.w)+(M.noDraw?'':btn('g','d','무',o.d))+btn('g','l','패',o.l);
+    const hRow=btn('h','w','핸디승',o.hw)+(M.noDraw?'':btn('h','d','핸디무',o.hd))+btn('h','l','핸디패',o.hl);
     return `<div class="match">
       <div class="mhead"><span class="lg ${M.L.cls}">${M.L.icon} ${M.L.name}</span><span class="teams">${esc(M.a)} <b>VS</b> ${esc(M.b)}</span></div>
-      <div class="mkt"><span class="mkt-l">승무패</span>
-        <button class="odd m${M.id}${cls('g','w')}" onclick="sel(this,${M.id},'g','w',${o.w})"><span>승</span><b>${o.w.toFixed(2)}</b></button>
-        <button class="odd m${M.id}${cls('g','d')}" onclick="sel(this,${M.id},'g','d',${o.d})"><span>무</span><b>${o.d.toFixed(2)}</b></button>
-        <button class="odd m${M.id}${cls('g','l')}" onclick="sel(this,${M.id},'g','l',${o.l})"><span>패</span><b>${o.l.toFixed(2)}</b></button>
-      </div>
-      <div class="mkt"><span class="mkt-l">핸디캡<small>기준 ${esc(hcLabel(M))}</small></span>
-        <button class="odd m${M.id}${cls('h','w')}" onclick="sel(this,${M.id},'h','w',${o.hw})"><span>핸디승</span><b>${o.hw.toFixed(2)}</b></button>
-        <button class="odd m${M.id}${cls('h','d')}" onclick="sel(this,${M.id},'h','d',${o.hd})"><span>핸디무</span><b>${o.hd.toFixed(2)}</b></button>
-        <button class="odd m${M.id}${cls('h','l')}" onclick="sel(this,${M.id},'h','l',${o.hl})"><span>핸디패</span><b>${o.hl.toFixed(2)}</b></button>
-      </div>
+      <div class="mkt"><span class="mkt-l">${M.noDraw?'승 · 패':'승무패'}</span>${gRow}</div>
+      <div class="mkt"><span class="mkt-l">핸디캡<small>기준 ${esc(hcLabel(M))}</small></span>${hRow}</div>
     </div>`;
   }).join('');
 }
@@ -331,9 +333,9 @@ function addStake(v){ stakeAmt=Math.min((stakeAmt||0)+v,balance); document.getEl
 function maxStake(){ stakeAmt=balance; document.getElementById('stakeIn').value=stakeAmt; renderSlip(); }
 
 /* ===== 정산 ===== */
-function checkLeg(leg,m,H){
-  if(leg.market==='g'){ return leg.pick==='w'?m>0:leg.pick==='d'?m===0:m<0; }
-  const hm=m-H; return leg.pick==='w'?hm>0:leg.pick==='d'?hm===0:hm<0;
+function checkLeg(leg,m,M){
+  if(leg.market==='g'){ return leg.pick==='w'?m>0:leg.pick==='l'?m<0:m===0; }
+  const hm=m+M.hcA; return leg.pick==='w'?hm>0:leg.pick==='l'?hm<0:hm===0;
 }
 function outcomeText(M,m){ return m>0?esc(M.a)+' '+m+'점차 승':m<0?esc(M.b)+' '+(-m)+'점차 승':'무승부'; }
 function placeBet(){
@@ -344,7 +346,7 @@ function placeBet(){
   balance-=stakeAmt; betCount++;
   const comb=legs.reduce((p,l)=>p*l.odds,1);
   let allWin=true;
-  const results=legs.map(l=>{ const M=matches[l.id]; const m=sampleMargin(M.L,M.sA,M.sB); const w=checkLeg(l,m,M.H); if(!w) allWin=false; return {l,M,m,w}; });
+  const results=legs.map(l=>{ const M=matches[l.id]; const m=sampleMargin(M.L,M.sA,M.sB); const w=checkLeg(l,m,M); if(!w) allWin=false; return {l,M,m,w}; });
   let payout=0;
   if(allWin){ payout=Math.round(stakeAmt*comb); balance+=payout; hitCount++; }
   if(balance>peak) peak=balance;
@@ -405,7 +407,7 @@ function loadRanks(){ try{ return JSON.parse(localStorage.getItem('toto_ranks')|
 function saveRanks(r){ try{ localStorage.setItem('toto_ranks', JSON.stringify(r)); }catch(e){} }
 function addRank(name, profit, balance, start){
   const r=loadRanks(); r.forEach(x=>delete x._me);
-  const entry={name:name.slice(0,8), profit:Math.round(profit), balance:Math.round(balance), start, t:Date.now(), _me:true};
+  const entry={name:name.slice(0,10), profit:Math.round(profit), balance:Math.round(balance), start, t:Date.now(), _me:true};
   r.push(entry); r.sort((a,b)=>b.profit-a.profit);
   const top=r.slice(0,50); saveRanks(top); return top;
 }
