@@ -214,7 +214,7 @@
   <!-- 랭킹 -->
   <section class="screen" id="rank">
     <h2>🏆 많이 번 랭킹</h2>
-    <p class="sub">순이익 TOP 10 (이 기기에 저장)</p>
+    <p class="sub">수익률(초기 자본금 대비) TOP 10 · 이 기기에 저장</p>
     <div class="ranklist" id="rankList"></div>
     <div class="res-btns">
       <button class="btn2" onclick="toStart()">처음으로</button>
@@ -372,20 +372,22 @@ function cashOut(){ endRun(false); }
 /* ===== 결과 화면 ===== */
 let pendingScore=null;
 function endRun(busted){
-  const profit=peak-startMoney;   // 랭킹 점수 = '최대로 간 금액(최고 보유액)' 기준
+  const profit=peak-startMoney;
+  const pct=startMoney>0?profit/startMoney*100:0;   // 랭킹 점수 = 초기 자본금 대비 수익률(%)
+  const pctStr=(pct>=0?'+':'')+Math.round(pct)+'%';
   const R=document.getElementById('result'); R.classList.toggle('bust',busted);
   document.getElementById('resIc').textContent=busted?'💸':(profit>0?'🤑':'🙂');
   const h=document.getElementById('resTitle'); h.textContent=busted?'게임 오버':'정산 완료!'; h.className=busted?'lose':'win';
-  document.getElementById('resSub').textContent=busted?'모두 잃었지만, 최고 기록은 랭킹에 남길 수 있어요!':(profit>0?'잘했어요! 최고 기록을 등록하세요 🎉':'아쉽! 그래도 기록을 남겨봐요');
+  document.getElementById('resSub').textContent=busted?'모두 잃었지만, 최고 기록은 랭킹에 남길 수 있어요!':(profit>0?'잘했어요! 수익률을 등록하세요 🎉':'아쉽! 그래도 기록을 남겨봐요');
   document.getElementById('resStats').innerHTML=
     '<div class="strow"><span class="k">시작 머니</span><span class="v">'+won(startMoney)+'</span></div>'+
     '<div class="strow"><span class="k">최종 보유머니</span><span class="v">'+won(balance)+'</span></div>'+
-    '<div class="strow"><span class="k">🏆 최고 기록 (랭킹 등록)</span><span class="v gold">'+won(peak)+'</span></div>'+
-    '<div class="strow"><span class="k">최고 순이익</span><span class="v '+(profit>=0?'green':'red')+'">'+signWon(profit)+'</span></div>'+
+    '<div class="strow"><span class="k">최고 기록</span><span class="v">'+won(peak)+'</span></div>'+
+    '<div class="strow"><span class="k">🏆 수익률 (랭킹 점수)</span><span class="v gold">'+pctStr+'</span></div>'+
     '<div class="strow"><span class="k">베팅 / 적중</span><span class="v">'+betCount+'회 / '+hitCount+'회</span></div>';
   pendingScore={profit, balance:peak, start:startMoney};
   document.getElementById('regBox').style.display='';
-  document.getElementById('regQ').textContent='🏆 최고 기록 '+won(peak)+' · 랭킹에 등록!';
+  document.getElementById('regQ').textContent='🏆 수익률 '+pctStr+' · 랭킹에 등록!';
   document.getElementById('regName').value='';
   show('result');
 }
@@ -403,7 +405,7 @@ function saveRanks(r){ try{ localStorage.setItem('toto_ranks', JSON.stringify(r)
 function addRank(name, profit, balance, start){
   const r=loadRanks(); r.forEach(x=>delete x._me);
   const entry={name:name.slice(0,10), profit:Math.round(profit), balance:Math.round(balance), start, t:Date.now(), _me:true};
-  r.push(entry); r.sort((a,b)=>b.profit-a.profit);
+  r.push(entry); r.sort((a,b)=>(b.profit/b.start)-(a.profit/a.start));
   const top=r.slice(0,50); saveRanks(top); return top;
 }
 function backFromRank(){ show(rankFrom==='result'?'result':'start'); }
@@ -418,11 +420,13 @@ function renderRank(){
   const box=document.getElementById('rankList');
   if(!r.length){ box.innerHTML='<div class="rank-empty">아직 등록된 기록이 없어요.<br>게임을 플레이하고 ‘정산’ 후 등록해 보세요! 🏆</div>'; return; }
   const medal=i=>['🥇','🥈','🥉'][i]||(i+1);
-  box.innerHTML=r.map((e,i)=>`<div class="rrow ${e._me?'me':''} ${i===0?'top1':''}">
+  const pctOf=e=>e.start>0?e.profit/e.start*100:0;
+  box.innerHTML=r.map((e,i)=>{ const p=pctOf(e);
+    return `<div class="rrow ${e._me?'me':''} ${i===0?'top1':''}">
     <div class="rk">${medal(i)}</div>
     <div class="rn">${esc(e.name)}${e._me?' <span style="color:var(--gold)">(나)</span>':''}<span class="d">시작 ${won(e.start)} · ${fmtDate(e.t)}</span></div>
-    <div class="rp"><div class="pf ${e.profit<0?'neg':''}">${signWon(e.profit)}</div><div class="bl">최고 ${won(e.balance)}</div></div>
-  </div>`).join('');
+    <div class="rp"><div class="pf ${p<0?'neg':''}">${(p>=0?'+':'')+Math.round(p)}%</div><div class="bl">최고 ${won(e.balance)}</div></div>
+  </div>`; }).join('');
 }
 function clearRanks(){ if(confirm('이 기기의 랭킹 기록을 모두 지울까요?')){ saveRanks([]); renderRank(); toast('랭킹을 초기화했어요'); } }
 </script>
